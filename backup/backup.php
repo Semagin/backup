@@ -113,12 +113,14 @@ function prepareSql($init_string, $sth)
 	while($row = $sth->fetch()){ //loop every row
 		$string_backup .=$init_string;
 		foreach ($_SESSION['columnname'] as $name) {
-			$row[$name[0]] = str_replace("\n","\\n", addslashes($row[$name[0]]) );
-		  	if (isset($row[$name[0]])){
-		    	$string_backup .= '"'.$row[$name[0]].'"' ;
-		  	} else {
-		    	$string_backup .= is_null($row[$name[0]]) ? 'NULL' : '""';
-		  	}
+			if (is_null($row[$name[0]])) {
+				$string_backup .= 'NULL';
+			} else {
+				$row[$name[0]] = str_replace("\n","\\n", addslashes($row[$name[0]]) );
+			  	if (isset($row[$name[0]])){
+			    	$string_backup .= '"'.$row[$name[0]].'"' ;
+			  	}
+			}
 		  	if ($name[0]<(count($_SESSION['columnname'])-1)){
 		    	$string_backup.= ',';
 		  	}
