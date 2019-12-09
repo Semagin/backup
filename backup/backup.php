@@ -8,8 +8,6 @@ if ($_POST) {
     $_SESSION['dbhost'] = (!isset($_POST['dbhost'])) ? $_SERVER['HTTP_HOST'] : $_POST['dbhost'];// by default - db on the same host
     $_SESSION['dblogin'] = (!isset($_POST['dblogin'])) ? 'root': $_POST['dblogin']; //default on test db
     $_SESSION['dbpasswd'] = (!isset($_POST['dbpasswd'])) ? 'root' : $_POST['dbpasswd']; //default on test db
-    // $_SESSION['timeout'] = (!isset($_POST['timeout'])) ? 15 : $_POST['timeout']; // half of max default timeout
-    $_SESSION['rowsperquery'] = (!isset($_POST['rowsperquery'])) ? 100 : $_POST['rowsperquery'];    // hope, no records in db lager than 20 Mb for default file size
 }
 if (!isset($_SESSION['filesizesuffix'])) {
     $_SESSION['filesizesuffix']=0;
@@ -17,11 +15,12 @@ if (!isset($_SESSION['filesizesuffix'])) {
 if (!isset($_SESSION['rowscount'])) {
     $_SESSION['rowscount']=0;
 }
+$timestamp = date("Y-m-d H:i");
 try {
     if (!isset($_SESSION['tblcount'])) { //initial setup table count and names
         $_SESSION['dblist']=[];
         $db = new PDO('mysql:host='.$_SESSION['dbhost'].';dbname='.$_SESSION['dbname'],$_SESSION['dblogin'], $_SESSION['dbpasswd']);
-        $sql = "SELECT table_name , round(((data_length + index_length)"." / 1024 ), 2) `Size (Kb)` FROM information_schema.TABLES WHERE table_schema = "."\"".$_SESSION['dbname']."\"";
+        $sql = "SELECT table_name , round(((data_length + index_length)"." ), 2) `Size (Kb)` FROM information_schema.TABLES WHERE table_schema = "."\"".$_SESSION['dbname']."\"";
         $sth = $db->prepare($sql);
         $sth->execute();
         while ($row = $sth->fetch()) {
@@ -45,6 +44,9 @@ try {
             while ($row = $sth->fetch()) {
                 $_SESSION['rowscount'] = $row[0];
             }
+            $memory_limit = (int)(ini_get('memory_limit'))*1024**['k' =>1, 'm' => 2, 'g' => 3][strtolower(ini_get('memory_limit'))[-1]] ?? 0;
+            $rowsperquery = ceil($memory_limit*$_SESSION['rowscount'] / $_SESSION['dblist'][$_SESSION['tblcount']-1][1]);
+            $_SESSION['rowsperquery']= $rowsperquery>100 ? 100 : $rowsperquery;
         }
         ($db->prepare('LOCK TABLE'.$_SESSION['dblist'][$_SESSION['tblcount']-1][0].'WRITE'))->execute();
 
@@ -59,24 +61,23 @@ try {
             $sth->execute();        
             $ret = prepareSql($init_string, $sth, $_SESSION['columnname']);
             if (strlen($ret)>$_SESSION['filesize']) {
+                print_r(1/($_SESSION['rowscount'] / $_SESSION['dblist'][$_SESSION['tblcount']-1][1]));
                 throw new Exception("Data size lager than file size", 1);
             }
-            $fname = 'backup-'.date("Y-m-d H:i").'-'.$_SESSION['filesizesuffix'].'.sql';
-            // print_r(); die;
             if (is_file($fname) && filesize($fname)+strlen($ret)>$_SESSION['filesize']) {
                 $_SESSION['filesizesuffix'] +=1;
-                $fname = 'backup-'.date("Y-m-d H:i").'-'.$_SESSION['filesizesuffix'].'.sql';
             }
-
-            $fd = fopen('backup.sql', 'a');
-            // $fd = fopen($fname, 'a');
+            $fname = 'backup-'.$timestamp.'-'.$_SESSION['filesizesuffix'].'.sql';
+            $fd = fopen($fname, 'a');
             fwrite($fd, $ret);
             while (is_resource($fd)) {
                 fclose($fd);
             }
             clearstatcache();
             $_SESSION['rownumber'] = $_SESSION['rownumber']+$_SESSION['rowsperquery'];
-            watchDog($start_time, ini_get('max_execution_time'), $_SERVER['HTTP_HOST'], $_SERVER['DOCUMENT_ROOT'], $_SERVER['SCRIPT_FILENAME']);
+            $redirect_link = isSSL() ? "Location: " ."https://" . $_SERVER['HTTP_HOST'] . substr(__DIR__, strlen($_SERVER['DOCUMENT_ROOT'])).'/'. basename($_SERVER['SCRIPT_FILENAME']) : "Location: " ."http://" . $_SERVER['HTTP_HOST'] . substr(__DIR__, strlen($_SERVER['DOCUMENT_ROOT'])).'/'. basename($_SERVER['SCRIPT_FILENAME']);
+            watchDog($start_time, ini_get('max_execution_time'), $redirect_link);
+            // watchDog($start_time, ini_get('max_execution_time'), $_SERVER['HTTP_HOST'], $_SERVER['DOCUMENT_ROOT'], $_SERVER['SCRIPT_FILENAME']);
         }
         unset($_SESSION['columnname']);
         unset($_SESSION['rownumber']);
@@ -97,10 +98,10 @@ catch (Exception $e) {
  * @param  string $dirname script directory name 
  * @param  string $scriptfilename  script filename
  */
-function watchDog($start, $timeout, $hostname, $dirname, $scriptfilename)
+function watchDog($start, $timeout, $redirect_link)
 {
     if (microtime(true)-$start>$timeout) {
-        header("Location: " ."http://" . $hostname . substr(__DIR__, strlen($dirname)).'/'. basename($scriptfilename));
+        header($redirect_link);
         die;   
     }
 }
@@ -119,7 +120,7 @@ function prepareSql($init_string, $sth, $columns)
             if (is_null($row[$name[0]])) {
                 $string_backup .= 'NULL';
             } else {
-                $row[$name[0]] = str_replace("\n","\\n", addslashes($row[$name[0]]) );
+                // $row[$name[0]] = mysqli::escape_string($row[$name[0]]);
                 if (isset($row[$name[0]])) {
                     $string_backup .= '"'.$row[$name[0]].'"' ;
                 }
@@ -131,6 +132,16 @@ function prepareSql($init_string, $sth, $columns)
         $string_backup = substr($string_backup, 0, strlen($string_backup)-1).");\n";
     }
     return $string_backup;
+}
+function isSSL()
+{
+    if( !empty( $_SERVER['https'] ) ) {
+        return true;
+    }
+    if( !empty( $_SERVER['HTTP_X_FORWARDED_PROTO'] ) && $_SERVER['HTTP_X_FORWARDED_PROTO'] == 'https' ) {
+        return true;
+    }
+    return false;
 }
 ?>
 
