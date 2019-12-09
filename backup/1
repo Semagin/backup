@@ -1,0 +1,1 @@
+REPLACE INTO `cscart_addons` (`addon`, `status`, `version`, `priority`, `dependencies`, `conflicts`, `separate`, `unmanaged`, `has_icon`, `install_datetime`, `marketplace_id`, `marketplace_license_key`) VALUES ("my_changes","D","1.0","4294967294","","","0","0","0","1575116519",NULL,NULL);
