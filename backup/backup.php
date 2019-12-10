@@ -20,8 +20,8 @@ if (!isset($_SESSION['timestamp'])) {
 }
 $fname = 'backup-'.$_SESSION['timestamp'].'-'.$_SESSION['filesizesuffix'].'.sql';
 try {
-    $db = new PDO('mysql:host='.$_SESSION['dbhost'].';dbname='.$_SESSION['dbname'],$_SESSION['dblogin'], $_SESSION['dbpasswd']);
-    $dbi = new mysqli($_SESSION['dbhost'] , $_SESSION['dblogin'], $_SESSION['dbpasswd'], $_SESSION['dbname']);
+    $db = new PDO('mysql:host='.$_SESSION['dbhost'].';dbname='.$_SESSION['dbname'], $_SESSION['dblogin'], $_SESSION['dbpasswd']);
+    $dbi = new mysqli($_SESSION['dbhost'], $_SESSION['dblogin'], $_SESSION['dbpasswd'], $_SESSION['dbname']);
     if (!isset($_SESSION['tblcount'])) { //initial setup table count and names
         $_SESSION['dblist']=[];
         $sql = "SELECT table_name , round(((data_length + index_length)"." ), 2) `Size (Kb)` FROM information_schema.TABLES WHERE table_schema = "."\"".$_SESSION['dbname']."\"";
@@ -87,8 +87,7 @@ try {
     }
     print_r('done!');
     die;
-}
-catch (Exception $e) {
+} catch (Exception $e) {
     echo 'Got exception: ',  $e->getMessage(), "\n";
 }
 
@@ -96,13 +95,13 @@ catch (Exception $e) {
  * check timeout
  * @param  int $start start time
  * @param  int $timeout server timeout setting
- * @param  string $redirect_link 
+ * @param  string $redirect_link
  */
 function watchDog($start, $timeout, $redirect_link)
 {
     if (microtime(true)-$start>$timeout) {
         header('Refresh: 0.1; URL='.$redirect_link);
-        die;   
+        die;
     }
 }
 
@@ -110,19 +109,19 @@ function watchDog($start, $timeout, $redirect_link)
  * @param  string       $init_string
  * @param  PDOStatement $sth
  * @param  array        $column
- * @return string block of SQL queries 
+ * @return string block of SQL queries
  */
 function prepareSql($init_string, $sth, $columns, $dbi)
 {
     $string_backup = '';
-    while ($row = $sth->fetch()){ //loop every row
+    while ($row = $sth->fetch()) { //loop every row
         $string_backup .=$init_string;
         foreach ($columns as $name) {
             if (is_null($row[$name[0]])) {
                 $string_backup .= 'NULL';
-            } elseif (is_numeric($row[$name[0]])){
+            } elseif (is_numeric($row[$name[0]])) {
                 $string_backup .= $row[$name[0]];
-            }else {
+            } else {
                 $row[$name[0]] = $dbi->escape_string($row[$name[0]]);
                 if (isset($row[$name[0]])) {
                     $string_backup .= '\''.$row[$name[0]].'\'' ;
@@ -143,10 +142,10 @@ function prepareSql($init_string, $sth, $columns, $dbi)
  */
 function isSSL()
 {
-    if( !empty( $_SERVER['https'] ) ) {
+    if (!empty($_SERVER['https'])) {
         return true;
     }
-    if( !empty( $_SERVER['HTTP_X_FORWARDED_PROTO'] ) && $_SERVER['HTTP_X_FORWARDED_PROTO'] == 'https' ) {
+    if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] == 'https') {
         return true;
     }
     return false;
