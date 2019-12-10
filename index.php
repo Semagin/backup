@@ -13,7 +13,6 @@
         <label for="dbname">DB name: <input type="text" name="dbname" id="dbname" required> </label> <br>
         <label for="dblogin">DB root login: <input type="text" name="dblogin" value="root" id="dblogin" required></label> <br>
         <label for="dbpasswd">DB root password: <input type="password" name="dbpasswd" value="root" id="dbpasswd" required></label> <br>
-        <label for="rowsperquery">Rows per transaction: <input type="number" name="rowsperquery" value="100" id="rowsperquery"></label> <br>
         <input type="submit" value="backup">
     </form>
 

@@ -15,11 +15,15 @@ if (!isset($_SESSION['filesizesuffix'])) {
 if (!isset($_SESSION['rowscount'])) {
     $_SESSION['rowscount']=0;
 }
-$timestamp = date("Y-m-d H:i");
+if (!isset($_SESSION['timestamp'])) {
+    $_SESSION['timestamp']=date("Y-m-d H:i");
+}
+$fname = 'backup-'.$_SESSION['timestamp'].'-'.$_SESSION['filesizesuffix'].'.sql';
 try {
+    $db = new PDO('mysql:host='.$_SESSION['dbhost'].';dbname='.$_SESSION['dbname'],$_SESSION['dblogin'], $_SESSION['dbpasswd']);
+    $dbi = new mysqli($_SESSION['dbhost'] , $_SESSION['dblogin'], $_SESSION['dbpasswd'], $_SESSION['dbname']);
     if (!isset($_SESSION['tblcount'])) { //initial setup table count and names
         $_SESSION['dblist']=[];
-        $db = new PDO('mysql:host='.$_SESSION['dbhost'].';dbname='.$_SESSION['dbname'],$_SESSION['dblogin'], $_SESSION['dbpasswd']);
         $sql = "SELECT table_name , round(((data_length + index_length)"." ), 2) `Size (Kb)` FROM information_schema.TABLES WHERE table_schema = "."\"".$_SESSION['dbname']."\"";
         $sth = $db->prepare($sql);
         $sth->execute();
@@ -28,7 +32,6 @@ try {
         }
         $_SESSION['tblcount'] = count($_SESSION['dblist']);
     }
-    $db = new PDO('mysql:host='.$_SESSION['dbhost'].';dbname='.$_SESSION['dbname'],$_SESSION['dblogin'], $_SESSION['dbpasswd']);
     while ($_SESSION['tblcount']>0) { //iterate for each table
         if (!isset($_SESSION['columnname'])) { //for the first time, set column names, inits vars for current table
             $_SESSION['rownumber']=0;       // reset current row
@@ -44,30 +47,29 @@ try {
             while ($row = $sth->fetch()) {
                 $_SESSION['rowscount'] = $row[0];
             }
-            $memory_limit = (int)(ini_get('memory_limit'))*1024**['k' =>1, 'm' => 2, 'g' => 3][strtolower(ini_get('memory_limit'))[-1]] ?? 0;
+            $memory_limit = (ini_get('memory_limit')!='-1') ? (int)(ini_get('memory_limit'))*1024**(['k' =>1, 'm' => 2, 'g' => 3][strtolower(ini_get('memory_limit'))[-1]] ?? 0) : $_SESSION['filesize'];
             $rowsperquery = ceil($memory_limit*$_SESSION['rowscount'] / $_SESSION['dblist'][$_SESSION['tblcount']-1][1]);
             $_SESSION['rowsperquery']= $rowsperquery>100 ? 100 : $rowsperquery;
         }
         ($db->prepare('LOCK TABLE'.$_SESSION['dblist'][$_SESSION['tblcount']-1][0].'WRITE'))->execute();
 
-        $init_string = "REPLACE INTO `".$_SESSION['dblist'][$_SESSION['tblcount']-1][0]."` ("; 
-        foreach ($_SESSION['columnname'] as $name) { 
+        $init_string = "REPLACE INTO `".$_SESSION['dblist'][$_SESSION['tblcount']-1][0]."` (";
+        foreach ($_SESSION['columnname'] as $name) {
             $init_string = $init_string."`".$name[0]."`, ";
         }
         $init_string = substr($init_string, 0, strlen($init_string)-2).") VALUES (";
         while ($_SESSION['rownumber']<$_SESSION['rowscount']) { //iterate over rows in one table
             $sql="SELECT * FROM ".$_SESSION['dblist'][$_SESSION['tblcount']-1][0]." LIMIT ".$_SESSION['rownumber'].", ".$_SESSION['rowsperquery'];
             $sth = $db->prepare($sql);
-            $sth->execute();        
-            $ret = prepareSql($init_string, $sth, $_SESSION['columnname']);
+            $sth->execute();
+            $ret = prepareSql($init_string, $sth, $_SESSION['columnname'], $dbi);
             if (strlen($ret)>$_SESSION['filesize']) {
-                print_r(1/($_SESSION['rowscount'] / $_SESSION['dblist'][$_SESSION['tblcount']-1][1]));
                 throw new Exception("Data size lager than file size", 1);
             }
             if (is_file($fname) && filesize($fname)+strlen($ret)>$_SESSION['filesize']) {
                 $_SESSION['filesizesuffix'] +=1;
+                $fname = 'backup-'.$_SESSION['timestamp'].'-'.$_SESSION['filesizesuffix'].'.sql';
             }
-            $fname = 'backup-'.$timestamp.'-'.$_SESSION['filesizesuffix'].'.sql';
             $fd = fopen($fname, 'a');
             fwrite($fd, $ret);
             while (is_resource($fd)) {
@@ -75,9 +77,8 @@ try {
             }
             clearstatcache();
             $_SESSION['rownumber'] = $_SESSION['rownumber']+$_SESSION['rowsperquery'];
-            $redirect_link = isSSL() ? "Location: " ."https://" . $_SERVER['HTTP_HOST'] . substr(__DIR__, strlen($_SERVER['DOCUMENT_ROOT'])).'/'. basename($_SERVER['SCRIPT_FILENAME']) : "Location: " ."http://" . $_SERVER['HTTP_HOST'] . substr(__DIR__, strlen($_SERVER['DOCUMENT_ROOT'])).'/'. basename($_SERVER['SCRIPT_FILENAME']);
+            $redirect_link = (isSSL() ? "https://" : "http://"). $_SERVER['HTTP_HOST'] . substr(__DIR__, strlen($_SERVER['DOCUMENT_ROOT'])).'/'. basename($_SERVER['SCRIPT_FILENAME']);
             watchDog($start_time, ini_get('max_execution_time'), $redirect_link);
-            // watchDog($start_time, ini_get('max_execution_time'), $_SERVER['HTTP_HOST'], $_SERVER['DOCUMENT_ROOT'], $_SERVER['SCRIPT_FILENAME']);
         }
         unset($_SESSION['columnname']);
         unset($_SESSION['rownumber']);
@@ -90,28 +91,28 @@ try {
 catch (Exception $e) {
     echo 'Got exception: ',  $e->getMessage(), "\n";
 }
+
 /**
  * check timeout
  * @param  int $start start time
  * @param  int $timeout server timeout setting
- * @param  string $hostname 
- * @param  string $dirname script directory name 
- * @param  string $scriptfilename  script filename
+ * @param  string $redirect_link 
  */
 function watchDog($start, $timeout, $redirect_link)
 {
     if (microtime(true)-$start>$timeout) {
-        header($redirect_link);
+        header('Refresh: 0.1; URL='.$redirect_link);
         die;   
     }
 }
+
 /**
  * @param  string       $init_string
  * @param  PDOStatement $sth
  * @param  array        $column
  * @return string block of SQL queries 
  */
-function prepareSql($init_string, $sth, $columns)
+function prepareSql($init_string, $sth, $columns, $dbi)
 {
     $string_backup = '';
     while ($row = $sth->fetch()){ //loop every row
@@ -119,10 +120,12 @@ function prepareSql($init_string, $sth, $columns)
         foreach ($columns as $name) {
             if (is_null($row[$name[0]])) {
                 $string_backup .= 'NULL';
-            } else {
-                // $row[$name[0]] = mysqli::escape_string($row[$name[0]]);
+            } elseif (is_numeric($row[$name[0]])){
+                $string_backup .= $row[$name[0]];
+            }else {
+                $row[$name[0]] = $dbi->escape_string($row[$name[0]]);
                 if (isset($row[$name[0]])) {
-                    $string_backup .= '"'.$row[$name[0]].'"' ;
+                    $string_backup .= '\''.$row[$name[0]].'\'' ;
                 }
             }
             if ($name[0]<(count($columns)-1)) {
@@ -133,6 +136,11 @@ function prepareSql($init_string, $sth, $columns)
     }
     return $string_backup;
 }
+
+/**
+ * check https availability
+ * @return boolean is aviable
+ */
 function isSSL()
 {
     if( !empty( $_SERVER['https'] ) ) {
@@ -143,5 +151,3 @@ function isSSL()
     }
     return false;
 }
-?>
-
